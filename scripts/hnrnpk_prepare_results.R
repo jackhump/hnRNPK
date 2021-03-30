@@ -149,21 +149,3 @@ start(intron_grange) <- start(intron_grange) - 10
 end(intron_grange) <- end(intron_grange) + 10
 rtracklayer::export.bed(intron_grange, con = "Buratti/strong_intron_coords_flank10.bed")
 
-# # positive control - Klim TDP exons
-# 
-# klim <- read_tsv("Klim/Klim_covariate_cassette_inclusion.tsv")
-# 
-# klim_intron_grange <- createGRange(coords = klim$intron_coords, strands = NA,id = klim$clusterID)
-# start(klim_intron_grange) <- start(klim_intron_grange) - 10
-# end(klim_intron_grange) <- end(klim_intron_grange) + 10
-# rtracklayer::export.bed(klim_intron_grange, con = "Buratti/Klim_intron_coords_flank10.bed")
-# 
-# # better - Ward TDP knockdown in neurons
-# Ward <- read_tsv("Ward/ward_tdp_control_tdp_cassette_inclusion.tsv")
-# Ward$strand <- str_split_fixed(Ward$clusterID, "_", 3)[,3]
-# Ward_intron_grange <- createGRange(coords = Ward$intron_coords, strands = Ward$strand ,id = Ward$clusterID)
-# 
-# start(Ward_intron_grange) <- start(Ward_intron_grange) - 10
-# end(Ward_intron_grange) <- end(Ward_intron_grange) + 10
-# rtracklayer::export.bed(Ward_intron_grange, con = "Ward/Ward_intron_coords_flank10.bed")
-

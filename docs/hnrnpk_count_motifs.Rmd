@@ -24,13 +24,17 @@ output:
 
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, warning = FALSE)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
 library(tidyverse)
 library(BSgenome.Hsapiens.UCSC.hg38)
 library(ggrepel)
 library(patchwork)
 library(ggrastr)
+```
 
+
+
+```{r}
 createGRange <- function(coords, strands, id){
   coord_split <- as.data.frame(stringr::str_split_fixed(coords,pattern = ":|-", n = 3), stringsAsFactors = FALSE  )
   names(coord_split) <- c("chr", "start", "end")
@@ -45,7 +49,7 @@ createGRange <- function(coords, strands, id){
   return(grange)
 }
 
-all_exons <- read_tsv("Buratti/all_cassette_metadata_final.tsv")
+all_exons <- read_tsv(here::here("Buratti/all_cassette_metadata_final.tsv"))
 
 exon_grange <- createGRange(coords = all_exons$exon_coords, strands = all_exons$strand, id = all_exons$clusterID)
 
@@ -208,7 +212,7 @@ di_res %>%
   scale_y_discrete(expand = c(0,0)) +
   theme(legend.position = "bottom")
 
-write_tsv(di_res %>% arrange(pvalue), file = "Tables/motif_res_k2.tsv")
+write_tsv(di_res %>% arrange(pvalue), file = here::here("Tables/motif_res_k2.tsv"))
 ```
 
 ## Trinucleotides ( k = 3)
@@ -238,7 +242,7 @@ tri_res %>%
   scale_y_discrete(expand = c(0,0))# +
  # theme(legend.position = "bottom")
 
-write_tsv(tri_res %>% arrange(pvalue), file = "Tables/motif_res_k3.tsv")
+write_tsv(tri_res %>% arrange(pvalue), file = here::here("Tables/motif_res_k3.tsv"))
 ```
 
 ## All quads (k = 4)
@@ -302,9 +306,9 @@ quad_volcano <-
 
 quad_volcano
 
-ggsave(plot = quad_volcano, filename = "Buratti/motif_4mer_volcano.pdf", width = 4, height = 6, )
+ggsave(plot = quad_volcano, filename = here::here("Buratti/motif_4mer_volcano.pdf"), width = 4, height = 6, )
 
 # write out
-write_tsv(quad_res %>% arrange(pvalue), file = "Tables/motif_res_k4.tsv")
+write_tsv(quad_res %>% arrange(pvalue), file = here::here("Tables/motif_res_k4.tsv"))
 
 ```
