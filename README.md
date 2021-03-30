@@ -13,9 +13,9 @@ All code for analysing siRNA knockdown of hnRNP K in SH-SY5Y cells.
 
 ## Interactive HTML documents
 
-[Making plots](https://jackhump.github.io/hnRNPK/hnrnpk_make_plots.html)
+[Making plots](https://jackhump.github.io/hnRNPK/docs/hnrnpk_make_plots.html)
 
-[Motif analysis](https://jackhump.github.io/hnRNPK/hnrnpk_count_motifs.html)
+[Motif analysis](https://jackhump.github.io/hnRNPK/docs/hnrnpk_count_motifs.html)
 
 
 
