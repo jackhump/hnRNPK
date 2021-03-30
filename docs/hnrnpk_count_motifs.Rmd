@@ -1,0 +1,310 @@
+---
+title: "hnRNPK siRNA knockdown"
+subtitle: "motif enrichment"
+author:  |
+ | Jack Humphrey
+ | 
+ | Raj Lab
+ | Department of Neuroscience
+ | Icahn School of Medicine at Mount Sinai
+ | NYC, New York
+date: "`r Sys.Date()`"
+output: 
+ rmarkdown::html_document:
+   theme: united
+   highlight: tango
+   code_folding: hide
+   toc: true
+   toc_float: true
+   df_print: paged
+   smooth_scroll: true
+   number_sections: false
+   self_contained: true  
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE)
+library(tidyverse)
+library(BSgenome.Hsapiens.UCSC.hg38)
+library(ggrepel)
+library(patchwork)
+library(ggrastr)
+
+createGRange <- function(coords, strands, id){
+  coord_split <- as.data.frame(stringr::str_split_fixed(coords,pattern = ":|-", n = 3), stringsAsFactors = FALSE  )
+  names(coord_split) <- c("chr", "start", "end")
+  coord_split$start <- as.numeric(coord_split$start)
+  coord_split$end <- as.numeric(coord_split$end)
+  grange <- GenomicRanges::GRanges(
+    seqnames = coord_split$chr, 
+    ranges = IRanges::IRanges(start = coord_split$start, end = coord_split$end),
+    strand = strands,
+    id = id
+  )
+  return(grange)
+}
+
+all_exons <- read_tsv("Buratti/all_cassette_metadata_final.tsv")
+
+exon_grange <- createGRange(coords = all_exons$exon_coords, strands = all_exons$strand, id = all_exons$clusterID)
+
+
+## get included exon sequences
+n_exons <- Inf
+# create flanked ranges
+flank_width <- 100
+run_meme <- FALSE
+# count all trinucleotides
+dna <- c("A","C", "G", "T")
+```
+
+Generate genomic sequences for exons, upstream and downstream sequences.
+
+```{r}
+included_exons <- 
+  filter(all_exons, delta_inclusion > 0.1, !is.na(ensembl_id)) %>%
+  arrange( desc(abs(delta_inclusion)) )  %>%
+  head(n_exons)
+
+included_exon_grange <- exon_grange[ exon_grange$id %in% included_exons$clusterID]
+
+# skipped exons
+skipped_exons <- 
+  filter(all_exons, delta_inclusion < -0.1, !is.na(ensembl_id)) %>%
+  arrange( desc(abs(delta_inclusion)) )  %>%
+  head(n_exons)
+
+skipped_exon_grange <-  exon_grange[ exon_grange$id %in% skipped_exons$clusterID]
+
+included_exon_seq <- BSgenome::getSeq(BSgenome.Hsapiens.UCSC.hg38, included_exon_grange)
+skipped_exon_seq <- BSgenome::getSeq(BSgenome.Hsapiens.UCSC.hg38, skipped_exon_grange)
+
+## get 5' upstream sequence
+included_5prime_grange <- flank(included_exon_grange, flank_width)
+skipped_5prime_grange <- flank(skipped_exon_grange, flank_width)
+
+included_5prime_seq <- BSgenome::getSeq(BSgenome.Hsapiens.UCSC.hg38, included_5prime_grange)
+skipped_5prime_seq <- BSgenome::getSeq(BSgenome.Hsapiens.UCSC.hg38, skipped_5prime_grange)
+
+## get 3' downstream sequence
+
+included_3prime_grange <- flank(included_exon_grange, flank_width, start = FALSE)
+skipped_3prime_grange <- flank(skipped_exon_grange, flank_width, start = FALSE)
+
+included_3prime_seq <- BSgenome::getSeq(BSgenome.Hsapiens.UCSC.hg38, included_3prime_grange)
+skipped_3prime_seq <- BSgenome::getSeq(BSgenome.Hsapiens.UCSC.hg38, skipped_3prime_grange)
+```
+
+## running MEME
+
+```{r}
+if(run_meme == TRUE){
+  library(universalmotif)
+  run_meme(target.sequences = included_exon_seq, control.sequences = skipped_exon_seq, objfun = "de", bin = '/Users/jack/Software/meme/bin/meme', output = "Buratti/meme/exon_included", overwrite.dir = TRUE, minw = 4, maxw = 8)
+  run_meme(target.sequences = skipped_exon_seq, control.sequences = included_exon_seq, objfun = "de", bin = '/Users/jack/Software/meme/bin/meme', output = "Buratti/meme/exon_skipped", overwrite.dir = TRUE, minw = 4, maxw = 8)
+  
+  run_meme(target.sequences = included_5prime_seq, control.sequences = skipped_5prime_seq, objfun = "de", bin = '/Users/jack/Software/meme/bin/meme', output = "Buratti/meme/5prime_included", overwrite.dir = TRUE, minw = 4, maxw = 8)
+  run_meme(target.sequences = skipped_5prime_seq, control.sequences = included_5prime_seq, objfun = "de", bin = '/Users/jack/Software/meme/bin/meme', output = "Buratti/meme/5prime_skipped", overwrite.dir = TRUE, minw = 4, maxw = 8)
+  
+  run_meme(target.sequences = included_3prime_seq, control.sequences = skipped_3prime_seq, objfun = "de", bin = '/Users/jack/Software/meme/bin/meme', output = "Buratti/meme/3prime_included", overwrite.dir = TRUE, minw = 4, maxw = 8)
+  run_meme(target.sequences = skipped_3prime_seq, control.sequences = included_3prime_seq, objfun = "de", bin = '/Users/jack/Software/meme/bin/meme', output = "Buratti/meme/3prime_skipped", overwrite.dir = TRUE, minw = 4, maxw = 8)
+}
+# meme results: 
+# - finds CCCA enriched in included exon bodies and 5prime 100bp.
+# - finds TGCAG in skipped exon body
+# - finds cCAG in skipped exon 3' region 
+```
+
+
+## motif counting function
+
+```{r}
+all_seq <- list(included_exon_seq, skipped_exon_seq, included_5prime_seq, skipped_5prime_seq, included_3prime_seq, skipped_3prime_seq )
+names(all_seq) <- c("included:exon", "skipped:exon", "included:5prime", "skipped:5prime", "included:3prime", "skipped:3prime")
+
+count_motifs <- 
+  function(motif){
+    motif_res <- 
+      map_df(all_seq, ~{
+      res <- grepl(motif, as.character(.x)) 
+      tibble(x = sum(res), n = length(res), motif = motif)
+      }, .id = "id") %>%
+      tidyr::separate(col = id, into = c("direction", "type"), sep = ":" ) %>%
+      pivot_wider(names_from = direction, values_from = c(x,n)) %>%
+      mutate(enrichment = (x_included/n_included) / (x_skipped/n_skipped)) %>%
+      mutate(pvalue = apply(.[,3:6], MARGIN = 1, FUN = function(i){ i = as.numeric(i); prop.test(x = c(i[1], i[2]), n = c(i[3], i[4]) )$p.value }) )
+    
+    
+  }
+
+```
+
+## Test known motifs for different RBPs
+
+```{r}
+# 
+# x <- count_motifs("TGCAG")
+
+# consensus motif of skipped exons
+included_consensus <- count_motifs("CCC[TA]") %>% mutate(name = "Included Consensus")# P = 1.03e-17
+
+# consensus motif of skipped exons
+skipped_consensus <- count_motifs("[TA]G[GC]AG") %>% mutate(name = "Skipped Consensus")# P = 0.000000454
+
+# Krainer's SRSF1 motif
+srsf1_motif <- count_motifs("TCAGAGGA|TCACTGGA")  %>% mutate(name = "SRSF1 (Krainer)")
+
+# Sanford 2009 SRSF1 motif
+sanford_srsf1 <- count_motifs("GAAGAA") %>% mutate(name = "SRSF1 (Sanford)")
+
+# SRSF2
+srsf2 <- count_motifs("AGGT[AG]AG") %>% mutate(name = "SRSF2 (Krainer) - 1")
+
+srsf2_2 <- count_motifs("GG[AT]G")  %>% mutate(name = "SRSF2 (Krainer) - 2")
+
+
+srsf2_3 <- count_motifs("[TA]GG[AT]G")  %>% mutate(name = "SRSF2 (Krainer) - 3")
+
+# nova YCAY motif
+nova_motif <- count_motifs("[CT]CA[CT]") %>% mutate(name = "NOVA1 (Ule)")
+
+dazap1_motif <- count_motifs("TAGG[TA]A[GA]|ATATA") %>% mutate(name = "DAZAP1")
+
+hnrnpa1_motif <- count_motifs("TAGGGA|GTAGTAGT") %>%  mutate(name = "HNRNPA1")
+
+bind_rows(included_consensus, skipped_consensus, srsf1_motif, sanford_srsf1, srsf2, srsf2_2, srsf2_3, nova_motif, dazap1_motif, hnrnpa1_motif) %>%
+  select(name, motif, type, enrichment, pvalue, everything() )
+
+```
+
+## All dinucleotides (kmers of length k = 2)
+
+```{r}
+
+
+## DINUCLETIDES
+dinucleotides <- tidyr::crossing(a = dna, b = dna) %>%
+  tidyr::unite(col = "motif", sep = "") %>%
+  distinct()
+
+di_res <- map_df(dinucleotides$motif, count_motifs) %>%
+  mutate(padj = p.adjust(pvalue, method = "BH")) %>%
+  mutate(p_label = case_when(
+    padj < 0.05 ~ "*",
+    pvalue < 0.05 ~ ".",
+    TRUE ~ ""
+  ))
+
+di_res %>%
+  arrange(enrichment) %>%
+  mutate(motif = factor(motif, levels = motif[!duplicated(motif)] )) %>%
+  mutate(type = factor(type, levels = c("5prime", "exon", "3prime"))) %>%
+  ggplot(aes(y = motif, x = type, label = enrichment, fill = log2(enrichment) )) + 
+  geom_tile() +
+  geom_text(aes(label = p_label)) + 
+  scale_fill_distiller(palette = "RdBu") +
+  scale_x_discrete(expand = c(0,0)) +
+  scale_y_discrete(expand = c(0,0)) +
+  theme(legend.position = "bottom")
+
+write_tsv(di_res %>% arrange(pvalue), file = "Tables/motif_res_k2.tsv")
+```
+
+## Trinucleotides ( k = 3)
+
+```{r fig.width = 8, fig.height = 12}
+trinucleotides <- tidyr::crossing(a = dna, b = dna, c = dna) %>%
+  tidyr::unite(col = "motif", sep = "") %>%
+  distinct()
+
+tri_res <- map_df(trinucleotides$motif, count_motifs) %>%
+  mutate(padj = p.adjust(pvalue, method = "BH")) %>%
+  mutate(p_label = case_when(
+    padj < 0.05 ~ "*",
+    pvalue < 0.05 ~ ".",
+    TRUE ~ ""
+  ))
+
+tri_res %>%
+  arrange(enrichment) %>%
+  mutate(motif = factor(motif, levels = motif[!duplicated(motif)] )) %>%
+  mutate(type = factor(type, levels = c("5prime", "exon", "3prime"))) %>%
+  ggplot(aes(y = motif, x = type, label = enrichment, fill = log2(enrichment) )) + 
+  geom_tile() +
+  geom_text(aes(label = p_label)) + 
+  scale_fill_distiller(palette = "RdBu") +
+  scale_x_discrete(expand = c(0,0)) +
+  scale_y_discrete(expand = c(0,0))# +
+ # theme(legend.position = "bottom")
+
+write_tsv(tri_res %>% arrange(pvalue), file = "Tables/motif_res_k3.tsv")
+```
+
+## All quads (k = 4)
+
+```{r}
+## QUADS - GET IN THE QUATTRO
+quadnucleotides <- tidyr::crossing(a = dna, b = dna, c = dna, d = dna) %>%
+  tidyr::unite(col = "motif", sep = "") %>%
+  distinct()
+
+quad_res <- map_df(quadnucleotides$motif, count_motifs) %>%
+  mutate(padj = p.adjust(pvalue, method = "bonferroni")) %>%
+  mutate(p_label = case_when(
+    padj < 0.05 ~ "*",
+    pvalue < 0.05 ~ ".",
+    TRUE ~ ""
+  ))
+
+# panel plot top 20 top and bottom
+bind_rows(
+  quad_res %>% arrange(desc(enrichment) ) %>% tail(20),
+  quad_res %>% arrange(enrichment ) %>% tail(20)
+) %>%
+  mutate(set = c(rep("Skipped exons", 20), rep("Included exons", 20)) ) %>%
+  mutate(motif = factor(motif, levels = motif[!duplicated(motif)] )) %>%
+  mutate(type = factor(type, levels = c("5prime", "exon", "3prime"))) %>%
+  ggplot(aes(y = motif, x = type, label = enrichment, fill = log2(enrichment) )) + 
+  geom_tile() +
+  geom_text(aes(label = p_label)) + 
+  scale_fill_distiller(palette = "RdBu") +
+  facet_wrap(~set, scales = "free") +  
+  scale_x_discrete(expand = c(0,0)) +
+  scale_y_discrete(expand = c(0,0)) +
+  theme(legend.position = "bottom")
+
+quad_volcano <- 
+  quad_res %>% 
+  mutate(group = case_when(
+    padj < 0.05 & log2(enrichment) > 0 ~ 1,
+    padj < 0.05 & log2(enrichment) < 0 ~ 2,
+    padj >= 0.05 ~ 3
+  )) %>%
+  mutate(type = case_when(
+    type == "5prime" ~ "5′ upstream 100bp",
+    type == "exon" ~ "Exon body",
+    type == "3prime" ~ "3′ downstream 100bp"
+  )) %>%
+  mutate(type = factor(type, levels = c("5′ upstream 100bp", "Exon body", "3′ downstream 100bp"))) %>%
+  mutate(motif_label = ifelse(padj < 0.05, motif, "")) %>%
+  arrange(enrichment) %>% 
+  ggplot(aes(x = log2(enrichment), y = -log10(pvalue))) + 
+  rasterise(geom_point(aes(colour = as.factor(group) ), size = 1), dpi = 900 ) + 
+  geom_text_repel(aes(label =motif_label), size = 2.2, max.iter = 5000, box.padding = unit(0.01, "lines") ) +
+  labs( x = expression(log[2]~enrichment), y = expression(-log[10]~p~value) ) +
+  theme_classic() +
+  theme(strip.background = element_blank(), strip.text = element_text(face = "bold"), panel.spacing = unit(1, "lines"), axis.text = element_text(colour = "black") ) +
+  scale_colour_manual(values = c("firebrick2", "dodgerblue", "grey")) +
+  guides(colour = FALSE) +
+  facet_wrap(~type, ncol = 1)
+
+
+quad_volcano
+
+ggsave(plot = quad_volcano, filename = "Buratti/motif_4mer_volcano.pdf", width = 4, height = 6, )
+
+# write out
+write_tsv(quad_res %>% arrange(pvalue), file = "Tables/motif_res_k4.tsv")
+
+```

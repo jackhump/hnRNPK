@@ -1,0 +1,365 @@
+---
+title: "hnRNPK siRNA knockdown"
+subtitle: "making plots"
+author:  |
+ | Jack Humphrey
+ | 
+ | Raj Lab
+ | Department of Neuroscience
+ | Icahn School of Medicine at Mount Sinai
+ | NYC, New York
+date: "`r Sys.Date()`"
+output: 
+ rmarkdown::html_document:
+   theme: united
+   highlight: tango
+   code_folding: hide
+   toc: true
+   toc_float: true
+   df_print: paged
+   smooth_scroll: true
+   number_sections: false
+   self_contained: true  
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggrepel)
+library(patchwork)
+library(ggrastr)
+
+all_exons <- read_tsv("Buratti/all_cassette_metadata_final.tsv")
+
+conservation <- read_tsv("Buratti/all_cassette_metadata_phyloP.tsv")
+
+all_exons$mean_phyloP_score <- conservation$mean_phyloP_score[match(all_exons$clusterID, conservation$clusterID)]
+
+load("Buratti/DESeq2_results.RData")
+
+rerun <- FALSE
+
+```
+
+## Differential Expression
+
+```{r fig.width = 5, fig.height = 5}
+#plotMA(resLFC)
+
+deseq_res <- mutate(deseq_res, group = case_when(
+  padj < 0.05 & abs(log2FoldChange) >= 1 ~ "top",
+  padj < 0.05 & abs(log2FoldChange) < 1 ~ "middle",
+  padj > 0.05 ~ "bottom"
+))
+
+deseq_plot <- 
+  deseq_res %>%
+  #mutate(group = padj < 0.05 & abs(log2FoldChange) > 1) %>%
+  mutate(pvalue = ifelse( -log10(pvalue) > 40, 0, pvalue) ) %>%
+  ggplot(aes(x = log2FoldChange, y = -log10(pvalue) ) ) + 
+  rasterise(geom_point(aes(colour = group), size = 0.5), dpi = 300)  +
+  xlim(-5,5) +
+  scale_colour_manual(values = c("darkgrey", "orange", "red") ) +
+  theme_classic() +
+  guides(colour = FALSE) +
+  labs(x = log[2]~fold~change, y = -log[10]~P-value) +
+  geom_text_repel( data = filter(deseq_res, gene == "HNRNPK") %>% mutate(gene = "hnRNP K"), aes(x = log2FoldChange, y = -log10(pvalue), label = gene), min.segment.length = 0, colour = "black") +
+  geom_point(data = filter(deseq_res, gene == "HNRNPK"), colour = "purple", size  = 0.8) +
+  NULL
+  
+deseq_plot 
+
+filter(deseq_res, padj < 0.05) %>% 
+  mutate(direction = case_when(log2FoldChange > 0 ~ "UP", 
+                               log2FoldChange < 0 ~ "DOWN")
+  ) %>% 
+  group_by(group, direction) %>% tally()
+
+
+ggsave(plot = deseq_plot, filename = "Buratti/Buratti_hnRNPK_deseq2_volcano.pdf", width = 5, height = 4)
+
+# write out
+write_tsv(deseq_res, file = "Tables/deseq_res.tsv")
+
+```
+
+## Differential Splicing 
+
+### summary plots
+
+```{r}
+
+full_plot <- all_exons %>% 
+  filter(abs(delta_inclusion) > 0.1) %>%
+  ggplot(aes(x = control_inclusion, y = delta_inclusion)) + 
+  annotate(geom = "rect", xmin = -0.01, xmax = 0.1, ymin = 0.1, ymax = 0.8, linetype = 3, fill = "red", alpha = 0.2, colour = NA ) +
+  annotate(geom = "rect", xmin = 0.9, xmax = 1.01, ymin = -0.8, ymax = -0.1, linetype = 3, fill = "dodgerblue", alpha = 0.2, colour = NA ) +
+  rasterise( geom_point(aes(colour = grepl("novelexon|novelskip", verdict)), size = 0.8 ), dpi = 600)  +
+  theme_classic() +
+  labs( x = expression(PSI[control]), y = expression(PSI[hnRNP~K]-PSI[control]~(Delta~PSI) ), colour = "Novel exon" ) +
+  scale_colour_manual(values = c("black", "orange")) +
+  guides(colour = FALSE) +
+  geom_hline(yintercept = c(0.1,-0.1), linetype = 2) + 
+  scale_y_continuous(labels = scales::percent, limits = c(-0.8,0.8), breaks = c(-0.5,-0.1, 0, 0.1, 0.5, 1) ) +
+  scale_x_continuous(labels = scales::percent) +
+  theme(axis.text = element_text(colour = "black"))
+
+full_plot 
+
+ggsave(plot = full_plot, filename = "Buratti/all_exons_summary_plot.pdf", width = 4, height = 3)
+
+```
+
+### Highlight cryptics exons for validation
+
+```{r fig.width = 3, fig.height = 5}
+## Define cryptic exons
+highlight <- c("HMBOX1", "TMEM132A", "B4GALNT4", "FAM160B2", "CACTIN", "DOT1L")
+
+cryptics <- 
+  dplyr::filter(all_exons, control_inclusion <= 0.1, delta_inclusion > 0.1, verdict == "novelexon:included", exon_width < 250) %>%
+  arrange( desc(delta_inclusion))
+
+inset_plot <- 
+  all_exons %>%
+  mutate(highlight = ifelse(gene %in% highlight, gene, "")) %>%
+  filter( control_inclusion <= 0.1, delta_inclusion > 0.1) %>%
+  ggplot(aes(x = control_inclusion, y = delta_inclusion)) + 
+  geom_text_repel(aes(label = highlight) , size = 2.5, force = 10, fontface = "italic", min.segment.length = 0) +
+  geom_point(aes(colour = grepl("novelexon", verdict) ), size = 1 ) +
+  #geom_text_repel(data = filter(cryptics, gene %in% highlight), aes(x = control_inclusion, y =delta_inclusion, label = gene )) + 
+  labs( x = expression(PSI[control]), y = expression(Delta~PSI), colour = "Novel exon" ) +
+  scale_colour_manual(values = c("black", "orange")) +
+  theme_classic() + 
+  guides(colour = FALSE) +  
+  scale_y_continuous(labels = scales::percent, limits = c(0.1,0.8), breaks = c(0.25, 0.5, 0.75)) +  
+  scale_x_continuous(labels = scales::percent, breaks = c(0,0.05, 0.1), limits = c(0, 0.11)) +
+  theme(plot.background = element_blank(), axis.text = element_text(colour = "black") )
+
+inset_plot
+
+
+ggsave(plot = inset_plot, width = 3, height = 5, filename ="Buratti/cryptic_inset_plot.pdf")
+```
+
+
+## PhyloP Conservation
+
+```{r}
+
+all_exons %>% 
+  group_by(exon_set) %>%
+  summarise( median(mean_phyloP_score))
+
+## compare cryptics and skiptics to their weaker versions
+phylop_plot <- 
+  all_exons %>%
+  filter(exon_set != "null set") %>%
+  mutate(exon_set = factor(exon_set, levels = c("Included", "Cryptic", "Skipped", "Skiptic"))) %>%
+  ggplot(aes(x = exon_set, y =mean_phyloP_score)) + 
+  geom_violin() +
+  geom_boxplot(notch = TRUE, width = 0.1,
+               aes(fill = exon_set, alpha = exon_set), outlier.size = 0.8) + 
+  ggpubr::stat_compare_means(
+    comparisons = list( c("Included", "Cryptic"), c("Skipped", "Skiptic"), c("Included", "Skipped")), 
+    method = "wilcox.test") +
+  theme_classic() +
+  labs(y = "Mean PhyloP 30-way\nconservation score", x = "") +
+  scale_fill_manual(values = c("firebrick2", "firebrick2", "dodgerblue", "dodgerblue") ) +
+  scale_alpha_manual(values = c(0.5, 1, 0.5, 1)) +
+  guides(fill = FALSE, alpha = FALSE) +
+  theme(axis.text = element_text(colour = "black"))
+
+phylop_plot
+
+ggsave(plot = phylop_plot, filename = "Buratti/PhyloP_conservation_plot.pdf", width = 4, height = 3 )
+```
+
+
+Conservation but split by whether exon or skipping junction is annotated.
+
+```{r}
+## compare within groups the affect of annotation
+phylop_category_plot <- 
+  all_exons %>%
+  mutate(exon_set = str_to_lower(exon_set)) %>%
+  filter(exon_set %in% c("included", "cryptic", "skipped", "skiptic") ) %>%
+  mutate(exon_set = factor(exon_set, levels = c("included", "cryptic", "skipped", "skiptic"))) %>%
+  ggplot(aes(x = annotation, y = mean_phyloP_score)) + 
+  geom_violin() +
+  geom_boxplot(notch = TRUE, width = 0.1, aes(fill = annotation)) + 
+  ggpubr::stat_compare_means(label.y.npc = 0.9, label.x.npc = 0.33) +#comparisons = list( c("Annotated", "Novel\nexon"), c("Annotated", "Novel\nskipping"))) +
+  theme_classic() +
+  ylim(-0.6, 1.5) +
+  labs(y = "Mean PhyloP 30-way conservation score", x = "") +
+  facet_wrap(~exon_set) +
+  scale_fill_manual(values = c("darkgrey", "goldenrod", "goldenrod")) +
+  guides(fill = FALSE) + 
+  theme(axis.text = element_text(colour = "black"), strip.background = element_blank(), strip.text = element_text(size = 12, face = "bold") )
+
+
+ggsave(plot = phylop_category_plot, filename = "Buratti/PhyloP_conservation_category_plot.pdf", width = 6, height = 6 )
+```
+
+# Write out exon info for supplementary tables
+
+```{r}
+all_exons_out <- all_exons %>%
+  mutate(annotation = gsub("\n", " ", annotation))
+
+write_tsv(all_exons_out, file = "Tables/all_exons_res.tsv")
+```
+
+## Gene Ontology
+
+```{r}
+### GENE ONTOLOGY --------------------------
+if(rerun){
+  exon_genes <-
+    all_exons %>% filter(exon_set != "null set") %>% 
+    split(.$exon_set) %>% purrr::map("gene")
+  
+  exon_go <- gprofiler2::gost(exon_genes, organism = "hsapiens", sources = "GO")
+  exon_kegg <- gprofiler2::gost(exon_genes, organism = "hsapiens", sources = "KEGG")
+  
+  exon_go_res <- exon_go$result
+  exon_kegg_res <- exon_kegg$result
+  
+  write_tsv(exon_go$result %>% dplyr::select(-parents), path = "Buratti/all_exons_go_terms.tsv")
+  #write_tsv(exon_kegg$result %>% dplyr::select(-parents), path = "Buratti/all_exons_KEGG_terms.tsv")
+}else{
+  exon_go_res <- read_tsv("Buratti/all_exons_go_terms.tsv")
+  #exon_kegg_res <- read_tsv("Buratti/all_exons_KEGG_terms.tsv")
+}
+exon_go_res
+#exon_kegg$result
+
+```
+
+## Compare with Gene Expression
+
+```{r}
+## COMPARE EXON INCLUSION WITH GENE EXPRESSION -----------------------
+table(all_exons$exon_set, all_exons$deg_direction)
+
+deg_directions <- all_exons %>%
+  mutate(exon_set = str_to_lower(exon_set)) %>%
+  filter(deg_padj < 0.05) %>%
+  group_by(exon_set, deg_direction) %>% 
+  tally() %>%
+  pivot_wider( names_from = deg_direction, values_from = n) %>%
+  mutate(N = DOWN + UP, prop = DOWN / N )
+# no difference in proportion of downregulated genes between different sets.
+prop.test(x = deg_directions$UP, n = deg_directions$N) # P = 0.67
+
+# differential gene expression 
+all_exons %>%
+  filter(deg_padj < 0.05, abs(delta_inclusion) > 0.1) %>%
+  ggplot(aes(x = exon_set, y = deg_logfc)) + geom_point() + geom_boxplot() +
+  theme_bw()
+
+deg_violin_plot <- 
+  all_exons %>%
+  mutate(exon_set = str_to_lower(exon_set)) %>%
+  mutate(exon_set = factor(exon_set, levels = rev(c("included", "cryptic", "skipped", "skiptic", "null set" )))) %>%
+  #left_join(deg_directions, by = "exon_set") %>%
+  filter(deg_padj < 0.05) %>%
+  ggplot(aes(x = exon_set, y = deg_logfc)) + 
+  geom_violin(aes(fill = exon_set, alpha = exon_set)) +
+  geom_label(data = deg_directions, aes(x = exon_set, label= paste0(signif(prop, 2) * 100, "%"), y = -0.5) ) +
+ # geom_label(data = deg_directions, aes(label= UP, y = 0.5) ) +
+  #geom_point(aes(colour = verdict)) +
+  theme_classic() +
+  coord_flip() +
+  scale_fill_manual(values = rev(c("firebrick2", "firebrick2", "dodgerblue", "dodgerblue", "darkgrey") )) +
+  scale_alpha_manual(values = rev(c(0.5, 1,0.5, 1, 0.5))) +
+  theme(panel.grid = element_blank(), axis.text = element_text(colour = "black") ) +
+  labs(y = expression(log[2]~fold~change), x = "") +
+  guides(fill = FALSE, alpha = FALSE)
+
+deg_violin_plot
+
+ggsave(plot = deg_violin_plot, filename = "Buratti/deg_violin_plot.pdf", width = 4, height = 5)
+
+cryptic_skiptic_expression_plot <-  
+  all_exons %>%
+  mutate(deg_label = ifelse(abs(deg_logfc) > 1, gene, "")) %>%
+  filter(exon_set %in% c("Cryptic", "Skiptic")) %>%
+  filter(deg_padj < 0.05) %>%
+  ggplot(aes(x = delta_inclusion, y = deg_logfc)) + 
+  geom_hline(yintercept = c(-1,1), linetype = 2, colour = "gray") +
+  geom_text_repel(aes(label = deg_label), force = 10, max.overlaps = 20,fontface = "italic") +
+  geom_point(aes(colour = delta_inclusion < 0)) + 
+  theme_classic() +
+  scale_colour_manual(values = c("firebrick2", "dodgerblue")) +
+  labs( y = expression(log[2]~fold~change), x = expression(Delta~PSI)) +
+  guides(colour = FALSE)
+
+cryptic_skiptic_expression_plot
+
+ggsave(plot = cryptic_skiptic_expression_plot, filename = "Buratti/deg_cryptic_skiptics.pdf", width = 5, height = 4)
+
+
+```
+
+## Exon widths
+
+```{r}
+
+width_plot <- 
+  all_exons %>%
+    mutate(exon_set = str_to_lower(exon_set)) %>%
+  filter(exon_set != "null set") %>%
+  mutate(exon_set = factor(exon_set, levels = c("included", "cryptic", "skipped", "skiptic"))) %>%
+  ggplot(aes(x = exon_set, y =exon_width)) + 
+  geom_violin() +
+  geom_boxplot(notch = TRUE, width = 0.1,
+               aes(fill = exon_set, alpha = exon_set)) + 
+  ggpubr::stat_compare_means(
+    comparisons = list( c("included", "cryptic"), c("skipped", "skiptic"), c("included", "skipped")), 
+    method = "wilcox.test") +
+  theme_classic() + 
+  theme(axis.text = element_text(colour = "black")) +
+  labs(y = "Exon width / bp", x = "") +
+  scale_fill_manual(values = c("firebrick2", "firebrick2", "dodgerblue", "dodgerblue") ) +
+  scale_alpha_manual(values = c(0.5, 1, 0.5, 1)) +
+  guides(fill = FALSE, alpha = FALSE)
+
+width_plot
+
+ggsave(plot = width_plot,filename = "Buratti/all_cassette_width_plot.pdf", width = 5, height = 5 )
+
+# ## binning by control inclusion
+# all_exons %>%
+#   arrange(control_inclusion) %>%
+#   mutate(bin = ntile(x = control_inclusion, ) ) %>%
+#   #filter(bin %in% c(1,10)) %>%
+#   ggplot(aes(x = as.factor(bin), y = exon_width)) + 
+#   geom_boxplot(aes(group = bin), notch = TRUE) +
+#   ggpubr::stat_compare_means() +
+#   theme_bw() +
+#   labs(x = expression(PSI[control]~bin))
+
+```
+
+Skipped exons are longer than included exons, and skiptic exons even longer than skipped exons.
+This could all be some weird artifact of the methods though.
+
+
+## Focus on splicing factors
+
+```{r}
+# splice factors
+# look at RBP DEGs
+filter(deseq_res, grepl("HNRNP|RBM|SRSF|FUS|TARDP|EWSR1|TAF15|DAZAP|PABP|PCBP|IGF2BP|PUM|NOVA", gene) ) %>% 
+  mutate(gene_label = ifelse(padj < 0.05, gene, "")) %>%
+  ggplot(aes(x = log2FoldChange, y = -log10(pvalue))) + 
+  geom_point() + 
+  geom_text_repel(aes(label = gene_label))
+
+filter(all_exons,grepl("HNRNP|RBM|SRSF|FUS|TARDP|EWSR1|TAF15|DAZAP|PABP|PCBP|IGF2BP|PUM|NOVA", gene) ) %>%
+  mutate(gene_label = ifelse(deg_padj < 0.05, gene, "")) %>%
+  ggplot(aes(x = delta_inclusion, y = deg_logfc)) + geom_point(aes(colour = deg_padj < 0.05)) +
+  geom_text_repel(aes(label = gene_label))
+
+```
