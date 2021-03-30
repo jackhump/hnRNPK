@@ -29,13 +29,13 @@ library(ggrepel)
 library(patchwork)
 library(ggrastr)
 
-all_exons <- read_tsv("Buratti/all_cassette_metadata_final.tsv")
+all_exons <- read_tsv(here::here("Buratti/all_cassette_metadata_final.tsv"))
 
-conservation <- read_tsv("Buratti/all_cassette_metadata_phyloP.tsv")
+conservation <- read_tsv(here::here("Buratti/all_cassette_metadata_phyloP.tsv"))
 
 all_exons$mean_phyloP_score <- conservation$mean_phyloP_score[match(all_exons$clusterID, conservation$clusterID)]
 
-load("Buratti/DESeq2_results.RData")
+load(here::here("Buratti/DESeq2_results.RData"))
 
 rerun <- FALSE
 
@@ -76,10 +76,10 @@ filter(deseq_res, padj < 0.05) %>%
   group_by(group, direction) %>% tally()
 
 
-ggsave(plot = deseq_plot, filename = "Buratti/Buratti_hnRNPK_deseq2_volcano.pdf", width = 5, height = 4)
+ggsave(plot = deseq_plot, filename = here::here("plots/Buratti_hnRNPK_deseq2_volcano.pdf"), width = 5, height = 4)
 
 # write out
-write_tsv(deseq_res, file = "Tables/deseq_res.tsv")
+write_tsv(deseq_res, file = here::here("Tables/deseq_res.tsv"))
 
 ```
 
@@ -106,7 +106,7 @@ full_plot <- all_exons %>%
 
 full_plot 
 
-ggsave(plot = full_plot, filename = "Buratti/all_exons_summary_plot.pdf", width = 4, height = 3)
+ggsave(plot = full_plot, filename = here::here("plots/all_exons_summary_plot.pdf"), width = 4, height = 3)
 
 ```
 
@@ -139,7 +139,7 @@ inset_plot <-
 inset_plot
 
 
-ggsave(plot = inset_plot, width = 3, height = 5, filename ="Buratti/cryptic_inset_plot.pdf")
+ggsave(plot = inset_plot, width = 3, height = 5, filename = here::here("plots/cryptic_inset_plot.pdf"))
 ```
 
 
@@ -172,7 +172,7 @@ phylop_plot <-
 
 phylop_plot
 
-ggsave(plot = phylop_plot, filename = "Buratti/PhyloP_conservation_plot.pdf", width = 4, height = 3 )
+ggsave(plot = phylop_plot, filename = here::here("plots/PhyloP_conservation_plot.pdf"), width = 4, height = 3 )
 ```
 
 
@@ -198,16 +198,16 @@ phylop_category_plot <-
   theme(axis.text = element_text(colour = "black"), strip.background = element_blank(), strip.text = element_text(size = 12, face = "bold") )
 
 
-ggsave(plot = phylop_category_plot, filename = "Buratti/PhyloP_conservation_category_plot.pdf", width = 6, height = 6 )
+ggsave(plot = phylop_category_plot, filename = here::here("plots/PhyloP_conservation_category_plot.pdf"), width = 6, height = 6 )
 ```
 
-# Write out exon info for supplementary tables
+## Write out exon info for supplementary tables
 
 ```{r}
 all_exons_out <- all_exons %>%
   mutate(annotation = gsub("\n", " ", annotation))
 
-write_tsv(all_exons_out, file = "Tables/all_exons_res.tsv")
+write_tsv(all_exons_out, file = here::here("Tables/all_exons_res.tsv"))
 ```
 
 ## Gene Ontology
@@ -225,10 +225,10 @@ if(rerun){
   exon_go_res <- exon_go$result
   exon_kegg_res <- exon_kegg$result
   
-  write_tsv(exon_go$result %>% dplyr::select(-parents), path = "Buratti/all_exons_go_terms.tsv")
+  write_tsv(exon_go$result %>% dplyr::select(-parents), path = here::here("Tables/all_exons_go_terms.tsv"))
   #write_tsv(exon_kegg$result %>% dplyr::select(-parents), path = "Buratti/all_exons_KEGG_terms.tsv")
 }else{
-  exon_go_res <- read_tsv("Buratti/all_exons_go_terms.tsv")
+  exon_go_res <- read_tsv(here::here("Tables/all_exons_go_terms.tsv"))
   #exon_kegg_res <- read_tsv("Buratti/all_exons_KEGG_terms.tsv")
 }
 exon_go_res
@@ -279,7 +279,7 @@ deg_violin_plot <-
 
 deg_violin_plot
 
-ggsave(plot = deg_violin_plot, filename = "Buratti/deg_violin_plot.pdf", width = 4, height = 5)
+ggsave(plot = deg_violin_plot, filename = here::here("plots/deg_violin_plot.pdf"), width = 4, height = 5)
 
 cryptic_skiptic_expression_plot <-  
   all_exons %>%
@@ -297,7 +297,7 @@ cryptic_skiptic_expression_plot <-
 
 cryptic_skiptic_expression_plot
 
-ggsave(plot = cryptic_skiptic_expression_plot, filename = "Buratti/deg_cryptic_skiptics.pdf", width = 5, height = 4)
+ggsave(plot = cryptic_skiptic_expression_plot, filename = here::here("plots/deg_cryptic_skiptics.pdf"), width = 5, height = 4)
 
 
 ```
@@ -327,7 +327,7 @@ width_plot <-
 
 width_plot
 
-ggsave(plot = width_plot,filename = "Buratti/all_cassette_width_plot.pdf", width = 5, height = 5 )
+ggsave(plot = width_plot,filename = here::here("plots/all_cassette_width_plot.pdf"), width = 5, height = 5 )
 
 # ## binning by control inclusion
 # all_exons %>%
